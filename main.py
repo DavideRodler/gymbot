@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from telegram import BotCommand
 from telegram.ext import Application
 
 import bot as bot_module
@@ -33,6 +34,17 @@ def build_application() -> Application:
     app.bot_data["scheduler"] = scheduler
 
     async def _post_init(_: Application) -> None:
+        await app.bot.set_my_commands([
+            BotCommand("start", "Stato e prossima prenotazione"),
+            BotCommand("status", "Stato sessione e bot"),
+            BotCommand("slot", "Cambia orario slot"),
+            BotCommand("cookies", "Aggiorna sessione (incolla cURL)"),
+            BotCommand("test", "Testa senza prenotare"),
+            BotCommand("stop", "Metti in pausa le prenotazioni"),
+            BotCommand("resume", "Riattiva le prenotazioni"),
+            BotCommand("setup", "Istruzioni per i cookie"),
+            BotCommand("help", "Lista comandi"),
+        ])
         scheduler.start()
         log.info("Scheduler avviato. Slot=%s. %s", config.slot_time,
                  scheduler.next_booking_text())
