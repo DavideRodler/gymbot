@@ -98,6 +98,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/slot [orario] — mostra o cambia lo slot\n"
         "/status — sessione, prossima e ultima prenotazione\n"
         "/test — prova senza prenotare\n"
+        "/book — prenota subito lo slot di oggi+2\n"
         "/stop — metti in pausa le prenotazioni\n"
         "/resume — riattiva le prenotazioni\n"
         "/help — questo messaggio",
@@ -211,6 +212,46 @@ async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def cmd_book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Immediate one-shot booking of the configured slot for today+2.
+
+    Manual override: bypasses the /stop pause and the weekend-skip guard,
+    since the user is explicitly asking to book now.
+    """
+    if not _authorized(update):
+        return
+    await update.message.reply_text("🎯 Prenoto adesso…")
+    if not await asyncio.to_thread(booker.validate_session, config.cookie_string()):
+        await update.message.reply_text("⚠️ Sessione scaduta/assente. Manda /cookies.")
+        return
+    day = booker.target_date()
+    try:
+        session = booker.make_session(config.cookie_string())
+        slots = await asyncio.to_thread(booker.fetch_slots, session, day)
+        slot = booker.find_slot(slots, config.slot_time, day)
+        if slot.start_hhmm != config.slot_time or (slot.day is not None and slot.day != day):
+            await update.message.reply_text(
+                f"❌ Slot inatteso ({slot.start_hhmm} {slot.day}) ≠ {config.slot_time} {day}."
+            )
+            return
+        await asyncio.to_thread(booker.book_with_retries, session, slot)
+        msg = f"✅ Prenotato! {format_day(day)} alle {config.slot_time} 💪"
+        config.last_booking_result = msg
+        await update.message.reply_text(msg)
+    except booker.SlotFull:
+        await update.message.reply_text(
+            f"😕 Slot delle {config.slot_time} di {format_day(day)} già pieno."
+        )
+    except booker.SlotNotFound:
+        await update.message.reply_text(
+            f"⚠️ Slot delle {config.slot_time} non trovato per {format_day(day)}."
+        )
+    except booker.SessionExpired:
+        await update.message.reply_text("⚠️ Sessione scaduta! Manda /cookies.")
+    except booker.BookingError as e:
+        await update.message.reply_text(f"❌ Errore prenotazione: {e}")
+
+
 async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
@@ -248,6 +289,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("slot", cmd_slot))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("test", cmd_test))
+    app.add_handler(CommandHandler("book", cmd_book))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("resume", cmd_resume))
     # If the user pastes cookies without the command, nudge them.
