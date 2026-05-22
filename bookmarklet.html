@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estrai i cookie — Gym Bot Sport Polimi</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:700px;margin:24px auto;padding:0 16px;line-height:1.6;color:#222}
+  h1{font-size:1.5rem}
+  .step{background:#f5f7fa;border-left:4px solid #2d7;border-radius:6px;padding:12px 16px;margin:14px 0}
+  .num{display:inline-block;background:#2d7;color:#fff;border-radius:50%;width:26px;height:26px;text-align:center;line-height:26px;font-weight:700;margin-right:6px}
+  .warn{background:#fff6e5;border-left:4px solid #e7a300;border-radius:6px;padding:12px 16px;margin:14px 0}
+  code{background:#eee;padding:1px 6px;border-radius:4px}
+  .flow{font-family:monospace;white-space:pre;background:#1e1e1e;color:#9fe;padding:14px;border-radius:8px;overflow:auto}
+  kbd{background:#222;color:#fff;border-radius:4px;padding:1px 7px;font-family:monospace}
+</style>
+</head>
+<body>
+
+<h1>🏋️ Gym Bot — Come dare i cookie al bot</h1>
+
+<div class="warn">
+  <b>Perché serve DevTools (e non un bottone magico):</b> i cookie di login del
+  sito (<code>.ASPXAUTH_SOCIALBOOKING</code>, <code>ASP.NET_SessionId</code>,
+  <code>__RequestVerificationToken</code>) sono <b>HttpOnly</b>: per sicurezza
+  il browser <u>non</u> li rende copiabili da uno script. L'unico modo è copiarli
+  dalla scheda <b>Network</b> con «Copy as cURL». Sono 5 click, si fa solo quando
+  il bot dice «sessione scaduta».
+</div>
+
+<div class="flow">[1] Login SPID  ->  [2] F12 / Network  ->  [3] Copy as cURL  ->  [4] /cookies + incolla
+     sul sito           apri DevTools          tasto destro            sul bot Telegram</div>
+
+<div class="step">
+  <span class="num">1</span><b>Fai login</b><br>
+  Apri <b>Chrome</b> o <b>Edge</b> su <code>ecomm.sportrick.com/sportpolimi</code>
+  e accedi con <b>SPID</b>, come fai sempre.
+</div>
+
+<div class="step">
+  <span class="num">2</span><b>Apri DevTools → Network</b><br>
+  Premi <kbd>F12</kbd> (oppure tasto destro → <i>Ispeziona</i>).<br>
+  In alto scegli la scheda <b>Network</b> (Rete). Poi <b>ricarica</b> la pagina
+  con <kbd>F5</kbd>: comparirà una lista di righe.
+</div>
+
+<div class="step">
+  <span class="num">3</span><b>Copia come cURL</b><br>
+  Clicca una riga qualsiasi che punta a <code>ecomm.sportrick.com</code>
+  (es. la prima, <code>sportpolimi</code> o <code>Booking</code>).<br>
+  <b>Tasto destro</b> sulla riga → <b>Copy</b> → <b>Copy as cURL</b>.<br>
+  (Su Windows va bene sia «cURL (bash)» sia «cURL (cmd)».)
+</div>
+
+<div class="step">
+  <span class="num">4</span><b>Mandalo al bot</b><br>
+  Apri Telegram, chat col bot, scrivi <code>/cookies</code> + <b>spazio</b>, poi
+  <b>incolla</b> (<kbd>Ctrl</kbd>+<kbd>V</kbd>) tutto il testo copiato e invia.<br>
+  Il bot legge da solo i cookie dal comando cURL.<br>
+  Risposta attesa: <b>✅ Sessione salvata!</b>
+</div>
+
+<div class="warn">
+  <b>Se il bot dice «mancano cookie importanti»:</b> hai copiato una richiesta
+  senza login (es. un'immagine o un file statico). Torna al punto 3 e copia una
+  richiesta a una <b>pagina</b> del sito (<code>Booking</code> o
+  <code>sportpolimi</code>), non a immagini/CSS/JS.
+</div>
+
+<p>In alternativa puoi incollare solo la stringa cookie grezza
+(<code>nome=valore; nome2=valore2</code>): la trovi in DevTools → riga selezionata
+→ <b>Headers</b> → <b>Request Headers</b> → riga <code>Cookie:</code>.</p>
+
+<p style="color:#888;font-size:.85rem">I cookie restano solo tra il tuo browser,
+Telegram e il tuo bot. Non vengono condivisi con nessun altro.</p>
+
+</body>
+</html>

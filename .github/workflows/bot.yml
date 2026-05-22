@@ -1,0 +1,47 @@
+name: gym-bot
+
+# Keep-alive pattern: a job runs the bot for up to ~5h50m, then the scheduled
+# trigger starts a fresh run. `concurrency` with cancel-in-progress guarantees
+# only ONE bot instance polls Telegram at a time (avoids 409 getUpdates conflict).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 */5 * * *"   # every 5h (UTC) — overlaps the 5h50m timeout
+  workflow_dispatch:
+
+concurrency:
+  group: gym-bot-singleton
+  cancel-in-progress: true
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # 5h50m; GitHub hard cap is 6h
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: pip install -r gymbot/requirements.txt
+
+      - name: Run bot
+        working-directory: gymbot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SESSION_COOKIES: ${{ secrets.SESSION_COOKIES }}
+          SLOT_TIME: ${{ secrets.SLOT_TIME }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # Auto-refresh of SESSION_COOKIES/SLOT_TIME Secrets needs a PAT with
+          # `secrets:write` (the default GITHUB_TOKEN CANNOT manage Secrets).
+          # Add a repo secret GH_PAT to enable it; otherwise updates only persist
+          # for the current run (re-send /cookies after each restart).
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: python main.py
