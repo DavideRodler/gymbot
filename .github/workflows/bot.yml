@@ -37,6 +37,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SESSION_COOKIES: ${{ secrets.SESSION_COOKIES }}
           SLOT_TIME: ${{ secrets.SLOT_TIME }}
+          BOOKING_ACTIVE: ${{ secrets.BOOKING_ACTIVE }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           # Auto-refresh of SESSION_COOKIES/SLOT_TIME Secrets needs a PAT with
           # `secrets:write` (the default GITHUB_TOKEN CANNOT manage Secrets).

@@ -98,6 +98,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/slot [orario] — mostra o cambia lo slot\n"
         "/status — sessione, prossima e ultima prenotazione\n"
         "/test — prova senza prenotare\n"
+        "/stop — metti in pausa le prenotazioni\n"
+        "/resume — riattiva le prenotazioni\n"
         "/help — questo messaggio",
         parse_mode="Markdown",
     )
@@ -179,11 +181,33 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not _authorized(update):
         return
     sched = _scheduler(context)
+    state = "▶️ attivo" if config.booking_active else "⏸ in pausa (/resume)"
     await update.message.reply_text(
+        f"Stato: {state}\n"
         f"Sessione: {await _session_line()}\n"
         f"Slot: {config.slot_time}\n"
         f"Prossima prenotazione: {sched.next_booking_text()}\n"
-        f"Ultima prenotazione: {config.last_booking_result}"
+        f"Ultima prenotazione: {config.last_booking_result}\n"
+        "(prenoto solo Lun–Ven)"
+    )
+
+
+async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _authorized(update):
+        return
+    config.set_active(False)
+    await update.message.reply_text(
+        "⏸ Bot in pausa. Nessuna prenotazione finché non scrivi /resume."
+    )
+
+
+async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _authorized(update):
+        return
+    config.set_active(True)
+    sched = _scheduler(context)
+    await update.message.reply_text(
+        f"▶️ Bot attivo. Prossima prenotazione: {sched.next_booking_text()}"
     )
 
 
@@ -224,6 +248,8 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("slot", cmd_slot))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("test", cmd_test))
+    app.add_handler(CommandHandler("stop", cmd_stop))
+    app.add_handler(CommandHandler("resume", cmd_resume))
     # If the user pastes cookies without the command, nudge them.
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, _nudge)

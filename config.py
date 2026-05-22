@@ -44,6 +44,12 @@ SKILL_ID = os.environ.get("SKILL_ID", "0")
 ACTIVITY_FLAGS = os.environ.get("ACTIVITY_FLAGS", "Classes")
 
 
+def _parse_bool(value, default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _load_json_file() -> dict:
     if CONFIG_PATH.exists():
         try:
@@ -70,6 +76,10 @@ class Config:
         #   {"cookies": "k=v; k2=v2", "localStorage": {...}}
         self.session_raw: str = (
             os.environ.get("SESSION_COOKIES") or fileconf.get("session_raw") or ""
+        )
+        # Pause switch: BOOKING_ACTIVE=true/false. Default active.
+        self.booking_active: bool = _parse_bool(
+            os.environ.get("BOOKING_ACTIVE", fileconf.get("booking_active")), True
         )
 
         # GitHub API config for persisting Secrets across restarts (optional).
@@ -103,11 +113,20 @@ class Config:
         self.session_raw = session_raw
         self._persist({"SESSION_COOKIES": session_raw})
 
+    def set_active(self, active: bool) -> None:
+        self.booking_active = active
+        self._persist({"BOOKING_ACTIVE": "true" if active else "false"})
+
     def _persist(self, secrets: dict[str, str]) -> None:
         # Local mirror.
         data = _load_json_file()
         for k, v in secrets.items():
-            data[{"SLOT_TIME": "slot_time", "SESSION_COOKIES": "session_raw"}[k]] = v
+            field_key = {
+                "SLOT_TIME": "slot_time",
+                "SESSION_COOKIES": "session_raw",
+                "BOOKING_ACTIVE": "booking_active",
+            }[k]
+            data[field_key] = v
         try:
             CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except OSError:

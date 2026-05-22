@@ -155,7 +155,14 @@ Così ogni persona prenota col proprio account, senza interferenze.
 | `/slot [orario]` | mostra/cambia lo slot |
 | `/status` | sessione, prossima e ultima prenotazione |
 | `/test` | prova senza prenotare |
+| `/stop` | metti in pausa le prenotazioni |
+| `/resume` | riattiva le prenotazioni |
 | `/help` | elenco comandi |
+
+Prenoto **solo da Lunedì a Venerdì**: se il giorno bersaglio (oggi+2) cade di
+sabato o domenica, salto in silenzio. Lo stato attivo/pausa è ricordato nel
+secret `BOOKING_ACTIVE` (se hai impostato `GH_PAT`); altrimenti vale fino al
+prossimo riavvio.
 
 ---
 

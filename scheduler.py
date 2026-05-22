@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+import logging
+from datetime import date, timedelta
 from typing import Awaitable, Callable, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -15,6 +16,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 import booker
 from config import TIMEZONE, config
+
+log = logging.getLogger("gymbot.scheduler")
 
 Notify = Callable[[str], Awaitable[None]]
 
@@ -51,15 +54,36 @@ class BookingScheduler:
         )
         self.scheduler.start()
 
+    def next_bookable_target(self) -> date:
+        """Next target date (today+2, advanced past weekends) that will be booked."""
+        t = booker.target_date()
+        while t.weekday() >= 5:  # Sat=5, Sun=6 → gym closed for booking
+            t += timedelta(days=1)
+        return t
+
     def next_booking_text(self) -> str:
-        job = self.scheduler.get_job("phase3")
-        if not job or not job.next_run_time:
+        if not config.booking_active:
+            return "in pausa (scrivi /resume)"
+        if not self.scheduler.running or not self.scheduler.get_job("phase3"):
             return "non programmata"
-        nrt = job.next_run_time
-        return f"{format_day(booker.target_date(nrt))} alle 00:00 (slot {config.slot_time})"
+        t = self.next_bookable_target()
+        return f"{format_day(t)} alle {config.slot_time}"
+
+    @staticmethod
+    def _skip_reason(day: date) -> Optional[str]:
+        """Return why tonight's booking is skipped, or None to proceed."""
+        if not config.booking_active:
+            return "bot in pausa"
+        if day.weekday() >= 5:  # Sat/Sun target → no booking
+            return f"weekend ({format_day(day)})"
+        return None
 
     # --- phases ----------------------------------------------------------
     async def phase1_precheck(self) -> None:
+        skip = self._skip_reason(booker.target_date())
+        if skip:
+            log.info("phase1 skip: %s", skip)
+            return
         ok = await asyncio.to_thread(booker.validate_session, config.cookie_string())
         if not ok:
             await self.notify(
@@ -69,6 +93,8 @@ class BookingScheduler:
     async def phase2_prefetch(self) -> None:
         self._cached_slot = None
         self._cached_for = booker.target_date()
+        if self._skip_reason(self._cached_for):
+            return
         try:
             session = booker.make_session(config.cookie_string())
             slots = await asyncio.to_thread(booker.fetch_slots, session, self._cached_for)
@@ -82,6 +108,10 @@ class BookingScheduler:
 
     async def phase3_book(self) -> None:
         day = booker.target_date()
+        skip = self._skip_reason(day)
+        if skip:
+            log.info("phase3 skip: %s — nessuna prenotazione", skip)
+            return
         try:
             session = booker.make_session(config.cookie_string())
             slot = self._cached_slot
