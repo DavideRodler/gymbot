@@ -98,7 +98,7 @@ class BookingScheduler:
         try:
             session = booker.make_session(config.cookie_string())
             slots = await asyncio.to_thread(booker.fetch_slots, session, self._cached_for)
-            self._cached_slot = booker.find_slot(slots, config.slot_time)
+            self._cached_slot = booker.find_slot(slots, config.slot_time, self._cached_for)
         except booker.SessionExpired:
             await self.notify("⚠️ Sessione scaduta! Manda /cookies per rinnovarla.")
         except booker.SlotNotFound:
@@ -117,7 +117,13 @@ class BookingScheduler:
             slot = self._cached_slot
             if slot is None or self._cached_for != day:
                 slots = await asyncio.to_thread(booker.fetch_slots, session, day)
-                slot = booker.find_slot(slots, config.slot_time)
+                slot = booker.find_slot(slots, config.slot_time, day)
+
+            # Safety net: never book a slot that isn't the configured time / target day.
+            if slot.start_hhmm != config.slot_time or (slot.day is not None and slot.day != day):
+                raise booker.SlotNotFound(
+                    f"Slot inatteso ({slot.start_hhmm} {slot.day}) ≠ {config.slot_time} {day}."
+                )
 
             await asyncio.to_thread(booker.book_with_retries, session, slot)
             msg = f"✅ Prenotato! {format_day(day)} alle {config.slot_time} 💪"

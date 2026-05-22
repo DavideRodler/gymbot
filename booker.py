@@ -70,6 +70,7 @@ class Slot:
     id: str            # AppointmentId
     start_hhmm: str    # TimeStart[:5]
     status: str        # raw Status string
+    day: Optional[date] = None  # slot's calendar date, if the payload carries one
     raw: dict = field(default_factory=dict)
 
     @property
@@ -185,6 +186,34 @@ def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> 
     return parse_slots(payload)
 
 
+_HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
+# Fields that may carry the slot's calendar date in an ASP.NET schedule payload.
+_DATE_FIELDS = ("TimeStart", "Day", "Date", "StartDate", "AppointmentDate", "DataInizio")
+
+
+def _extract_hhmm(time_start: str) -> str:
+    """Pull HH:MM out of '17:30', '17:30:00' or '2026-05-25T17:30:00'."""
+    m = _HHMM_RE.search(time_start)
+    if not m:
+        return ""
+    return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+
+def _extract_day(ev: dict) -> Optional[date]:
+    """Best-effort calendar date from common schedule fields (None if absent)."""
+    for key in _DATE_FIELDS:
+        val = ev.get(key)
+        if not val:
+            continue
+        m = re.search(r"(\d{4})-(\d{2})-(\d{2})", str(val))  # ISO yyyy-mm-dd
+        if m:
+            try:
+                return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                continue
+    return None
+
+
 def parse_slots(payload) -> list[Slot]:
     data = payload.get("data", []) if isinstance(payload, dict) else payload
     slots: list[Slot] = []
@@ -194,19 +223,35 @@ def parse_slots(payload) -> list[Slot]:
         if not isinstance(ev, dict):
             continue
         sid = ev.get("AppointmentId")
-        time_start = ev.get("TimeStart") or ""
+        time_start = str(ev.get("TimeStart") or "")
         if sid is None or not time_start:
             continue
-        hhmm = str(time_start)[:5]
+        hhmm = _extract_hhmm(time_start)
+        if not hhmm:
+            continue
         slots.append(
-            Slot(id=str(sid), start_hhmm=hhmm, status=str(ev.get("Status", "")), raw=ev)
+            Slot(
+                id=str(sid),
+                start_hhmm=hhmm,
+                status=str(ev.get("Status", "")),
+                day=_extract_day(ev),
+                raw=ev,
+            )
         )
     return slots
 
 
-def find_slot(slots: list[Slot], slot_time: str) -> Slot:
-    """Slot matching the preferred time; prefer an Available one if duplicated."""
-    matches = [s for s in slots if s.start_hhmm == slot_time]
+def find_slot(slots: list[Slot], slot_time: str, day: Optional[date] = None) -> Slot:
+    """Slot matching the preferred time (and day, if known); prefer an Available one.
+
+    The day-guard only fires when both `day` is given AND the slot carries its own
+    date — preventing a wrong-day booking if the schedule ever returns >1 day. When
+    no date info is present it is a no-op, so the existing exact-time match stands.
+    """
+    matches = [
+        s for s in slots
+        if s.start_hhmm == slot_time and (day is None or s.day is None or s.day == day)
+    ]
     if not matches:
         raise SlotNotFound(f"Nessuno slot delle {slot_time} trovato.")
     for s in matches:

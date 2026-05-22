@@ -224,7 +224,7 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         session = booker.make_session(config.cookie_string())
         slots = await asyncio.to_thread(booker.fetch_slots, session, day)
-        slot = booker.find_slot(slots, config.slot_time)
+        slot = booker.find_slot(slots, config.slot_time, day)
         state = "PIENO ❌" if slot.is_full else "disponibile ✅"
         await update.message.reply_text(
             f"✅ Slot {config.slot_time} di {format_day(day)} trovato "
