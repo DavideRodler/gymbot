@@ -16,7 +16,8 @@ SPID una volta ogni tanto e gli passi i "cookie"; al resto pensa lui.
 
 ## Cosa fa, in breve
 
-- Ogni sera controlla la tua sessione (alle **23:59**) e ti avvisa se è scaduta.
+- Ogni ora controlla la tua sessione e ti avvisa solo se è scaduta/assente.
+- Ogni sera fa anche un controllo alle **23:59**, appena prima di prenotare.
 - Alle **23:59:45** carica in anticipo gli slot del giorno bersaglio.
 - Alle **00:00:00** spara la prenotazione (è una gara con gli altri utenti!).
 - Ti manda una notifica col risultato.

@@ -1,6 +1,7 @@
 """Speed-optimised 3-phase nightly booking via APScheduler.
 
-23:59:00  pre-check session  → warn if expired
+hourly    session monitor    → warn if expired
+23:59:00  pre-check session  → warn if expired before booking
 23:59:45  pre-fetch slots    → cache slot_id for the preferred time
 00:00:00  fire booking POST  → using the cached slot (fresh-fetch fallback)
 """
@@ -41,6 +42,10 @@ class BookingScheduler:
 
     def start(self) -> None:
         self.scheduler.add_job(
+            self.hourly_session_check, CronTrigger(minute=0, second=0),
+            id="hourly_session_check", replace_existing=True,
+        )
+        self.scheduler.add_job(
             self.phase1_precheck, CronTrigger(hour=23, minute=59, second=0),
             id="phase1", replace_existing=True,
         )
@@ -77,6 +82,13 @@ class BookingScheduler:
         if day.weekday() >= 5:  # Sat/Sun target → no booking
             return f"weekend ({format_day(day)})"
         return None
+
+    # --- session monitor -------------------------------------------------
+    async def hourly_session_check(self) -> None:
+        ok = await asyncio.to_thread(booker.validate_session, config.cookie_string())
+        if ok:
+            return
+        await self.notify("⚠️ Sessione scaduta/assente. Manda /cookies per rinnovarla.")
 
     # --- phases ----------------------------------------------------------
     async def phase1_precheck(self) -> None:
