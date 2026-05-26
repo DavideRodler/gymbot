@@ -12,6 +12,8 @@ import logging
 from datetime import date, timedelta
 from typing import Awaitable, Callable, Optional
 
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -21,6 +23,7 @@ from config import TIMEZONE, config
 log = logging.getLogger("gymbot.scheduler")
 
 Notify = Callable[[str], Awaitable[None]]
+ROME_TZ = ZoneInfo(TIMEZONE)
 
 _GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 _MESI = [
@@ -33,28 +36,32 @@ def format_day(d: date) -> str:
     return f"{_GIORNI[d.weekday()]} {d.day} {_MESI[d.month - 1]}"
 
 
+def rome_cron(**kwargs) -> CronTrigger:
+    return CronTrigger(timezone=ROME_TZ, **kwargs)
+
+
 class BookingScheduler:
     def __init__(self, notify: Notify) -> None:
         self.notify = notify
-        self.scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+        self.scheduler = AsyncIOScheduler(timezone=ROME_TZ)
         self._cached_slot: Optional[booker.Slot] = None
         self._cached_for: Optional[date] = None
 
     def start(self) -> None:
         self.scheduler.add_job(
-            self.hourly_session_check, CronTrigger(minute=0, second=0),
+            self.hourly_session_check, rome_cron(minute=0, second=0),
             id="hourly_session_check", replace_existing=True,
         )
         self.scheduler.add_job(
-            self.phase1_precheck, CronTrigger(hour=23, minute=59, second=0),
+            self.phase1_precheck, rome_cron(hour=23, minute=59, second=0),
             id="phase1", replace_existing=True,
         )
         self.scheduler.add_job(
-            self.phase2_prefetch, CronTrigger(hour=23, minute=59, second=45),
+            self.phase2_prefetch, rome_cron(hour=23, minute=59, second=45),
             id="phase2", replace_existing=True,
         )
         self.scheduler.add_job(
-            self.phase3_book, CronTrigger(hour=0, minute=0, second=0),
+            self.phase3_book, rome_cron(hour=0, minute=0, second=0),
             id="phase3", replace_existing=True,
         )
         self.scheduler.start()
