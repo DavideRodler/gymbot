@@ -24,6 +24,7 @@ log = logging.getLogger("gymbot.scheduler")
 
 Notify = Callable[[str], Awaitable[None]]
 ROME_TZ = ZoneInfo(TIMEZONE)
+BOOKING_RETRY_SECONDS = 60
 
 _GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 _MESI = [
@@ -131,23 +132,41 @@ class BookingScheduler:
         if skip:
             log.info("phase3 skip: %s — nessuna prenotazione", skip)
             return
+        retry_count = 0
         try:
-            session = booker.make_session(config.cookie_string())
-            slot = self._cached_slot
-            if slot is None or self._cached_for != day:
-                slots = await asyncio.to_thread(booker.fetch_slots, session, day)
-                slot = booker.find_slot(slots, config.slot_time, day)
+            while True:
+                try:
+                    session = booker.make_session(config.cookie_string())
+                    slot = self._cached_slot
+                    if slot is None or self._cached_for != day:
+                        slots = await asyncio.to_thread(booker.fetch_slots, session, day)
+                        slot = booker.find_slot(slots, config.slot_time, day)
 
-            # Safety net: never book a slot that isn't the configured time / target day.
-            if slot.start_hhmm != config.slot_time or (slot.day is not None and slot.day != day):
-                raise booker.SlotNotFound(
-                    f"Slot inatteso ({slot.start_hhmm} {slot.day}) ≠ {config.slot_time} {day}."
-                )
+                    # Safety net: never book a slot that isn't the configured time / target day.
+                    if slot.start_hhmm != config.slot_time or (
+                        slot.day is not None and slot.day != day
+                    ):
+                        raise booker.SlotNotFound(
+                            f"Slot inatteso ({slot.start_hhmm} {slot.day}) ≠ "
+                            f"{config.slot_time} {day}."
+                        )
 
-            await asyncio.to_thread(booker.book_with_retries, session, slot)
-            msg = f"✅ Prenotato! {format_day(day)} alle {config.slot_time} 💪"
-            config.last_booking_result = msg
-            await self.notify(msg)
+                    await asyncio.to_thread(booker.book_with_retries, session, slot)
+                    msg = f"✅ Prenotato! {format_day(day)} alle {config.slot_time} 💪"
+                    config.last_booking_result = msg
+                    await self.notify(msg)
+                    return
+                except booker.BookingError as e:
+                    if await asyncio.to_thread(booker.session_expired, config.cookie_string()):
+                        raise booker.SessionExpired("Sessione scaduta durante i retry.") from e
+                    retry_count += 1
+                    log.warning(
+                        "phase3 transient booking error; retry #%s in %ss: %s",
+                        retry_count,
+                        BOOKING_RETRY_SECONDS,
+                        e,
+                    )
+                    await asyncio.sleep(BOOKING_RETRY_SECONDS)
 
         except booker.SlotFull:
             msg = f"😕 Slot delle {config.slot_time} già pieno. Riprovo domani."

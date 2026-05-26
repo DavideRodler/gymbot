@@ -20,6 +20,8 @@ SPID una volta ogni tanto e gli passi i "cookie"; al resto pensa lui.
 - Ogni sera fa anche un controllo alle **23:59**, appena prima di prenotare.
 - Alle **23:59:45** carica in anticipo gli slot del giorno bersaglio.
 - Alle **00:00:00** spara la prenotazione (è una gara con gli altri utenti!).
+- Se il sito non risponde a mezzanotte, riprova ogni minuto finché la sessione
+  non risulta scaduta.
 - Ti manda una notifica col risultato.
 
 ---

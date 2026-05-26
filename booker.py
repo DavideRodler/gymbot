@@ -154,6 +154,23 @@ def validate_session(cookie_string: str, timeout: float = 10.0) -> bool:
     return r.status_code == 200 and not _looks_like_login(r)
 
 
+def session_expired(cookie_string: str, timeout: float = 10.0) -> bool:
+    """True only when we can tell the saved cookies are expired or absent.
+
+    Network/server failures are not treated as expiry, because the booking
+    scheduler should keep retrying while Sportrick is temporarily unavailable.
+    """
+    if not cookie_string:
+        return True
+    try:
+        r = make_session(cookie_string).get(
+            BASE_URL + BOOKING_PATH, timeout=timeout, allow_redirects=True
+        )
+    except requests.RequestException:
+        return False
+    return _looks_like_login(r)
+
+
 def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> list[Slot]:
     """POST GetActivitySchedule for `day`, return parsed slots."""
     body = {
