@@ -248,6 +248,16 @@ def first_available_slot_today_or_tomorrow(session: requests.Session) -> Slot:
     raise SlotNotFound("Nessuno slot disponibile trovato oggi o domani.")
 
 
+def slot_today_at(session: requests.Session, slot_time: str) -> Slot:
+    """Return today's slot at `slot_time`, regardless of availability status."""
+    today = now_local().date()
+    slots = fetch_slots(session, today)
+    for slot in slots:
+        if slot.start_hhmm == slot_time and (slot.day is None or slot.day == today):
+            return slot
+    raise SlotNotFound(f"Nessuno slot delle {slot_time} trovato per oggi.")
+
+
 _HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
 # Fields that may carry the slot's calendar date in an ASP.NET schedule payload.
 _DATE_FIELDS = ("TimeStart", "Day", "Date", "StartDate", "AppointmentDate", "DataInizio")

@@ -289,37 +289,24 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
-    await update.message.reply_text("🔎 Recupero amici invitabili…")
+    await update.message.reply_text("🔎 Recupero amici invitabili per lo slot di oggi alle 13:00…")
     try:
         session = booker.make_session(config.cookie_string())
-        slot = await asyncio.to_thread(booker.first_available_slot_today_or_tomorrow, session)
-    except booker.SlotNotFound as e:
-        await update.message.reply_text(f"⚠️ {e}")
-        return
-    except booker.SessionExpired as e:
-        await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
-        return
-    except booker.BookingError as e:
-        await update.message.reply_text(f"❌ Errore GetActivitySchedule: {e}")
-        return
-
-    for param_name in ("query", "name", "search", "term"):
-        label = f"GetFriendsToInvite?appointmentId={slot.id}&{param_name}=a"
-        try:
-            raw = await asyncio.to_thread(
-                booker.fetch_friends_raw,
-                session,
-                slot.id,
-                {param_name: "a"},
-            )
-            message = f"{label}\n{raw}"
-        except booker.SessionExpired as e:
-            message = f"{label}\n⚠️ Sessione scaduta/non autorizzata: {e}"
-        except booker.BookingError as e:
-            message = f"{label}\n❌ Errore GetFriendsToInvite: {e}"
-
+        slot = await asyncio.to_thread(booker.slot_today_at, session, "13:00")
+        raw = await asyncio.to_thread(booker.fetch_friends_raw, session, slot.id)
+        message = (
+            f"GetFriendsToInvite?appointmentId={slot.id}\n"
+            f"Slot: {slot.start_hhmm}, status: {slot.status}\n"
+            f"{raw}"
+        )
         for chunk in _chunks(message):
             await update.message.reply_text(chunk)
+    except booker.SlotNotFound as e:
+        await update.message.reply_text(f"⚠️ {e}")
+    except booker.SessionExpired as e:
+        await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
+    except booker.BookingError as e:
+        await update.message.reply_text(f"❌ Errore /friends: {e}")
 
 
 def register_handlers(app: Application) -> None:
