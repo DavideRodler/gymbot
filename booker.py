@@ -277,6 +277,17 @@ def next_available_slot_tomorrow(session: requests.Session) -> Slot:
     raise SlotNotFound(f"Nessuno slot disponibile trovato per domani ({tomorrow}).")
 
 
+def slot_on_day_at(session: requests.Session, day: date, slot_time: str) -> Slot:
+    """Return the schedule slot at `slot_time` for `day`, regardless of status."""
+    slots = fetch_slots(session, day)
+    for slot in slots:
+        if slot.start_hhmm == slot_time and (slot.day is None or slot.day == day):
+            if slot.day is None:
+                slot.day = day
+            return slot
+    raise SlotNotFound(f"Nessuno slot delle {slot_time} trovato per {day}.")
+
+
 def book_appointment_raw(
     session: requests.Session,
     appointment_id: str,
@@ -494,7 +505,9 @@ def _cleanup_created_bookings(
         raw = get_customer_appointments_raw(session)
     except BookingError as e:
         report.append(f"{label}: GetCustomerAppointments before cleanup failed: {e}")
-        if before_ids is None or slot.id not in before_ids:
+        if before_ids is None:
+            report.append(f"{label}: cleanup skipped because baseline is unknown.")
+        elif slot.id not in before_ids:
             try:
                 deleted = delete_booking_raw(session, slot.id)
                 report.append(deleted.format(f"{label}: fallback DeleteBooking id={slot.id}"))
@@ -518,7 +531,11 @@ def _cleanup_created_bookings(
                 created.append(booking_id)
     except BookingError as e:
         report.append(f"{label}: cleanup parse error: {e}")
-        created = [slot.id] if before_ids is None or slot.id not in before_ids else []
+        if before_ids is None:
+            report.append(f"{label}: cleanup skipped because baseline is unknown.")
+            created = []
+        else:
+            created = [slot.id] if slot.id not in before_ids else []
 
     if not created:
         report.append(f"{label}: cleanup found no created bookings.")
@@ -542,12 +559,18 @@ def _count_slot_bookings(session: requests.Session, report: list[str], slot: Slo
 def run_multibook_diagnostics(cookie_string: str) -> str:
     """Run raw multi-booking probes and cleanup created bookings after each test."""
     session = make_session(cookie_string)
-    slot = next_available_slot_tomorrow(session)
+    target_day = date(2026, 5, 28)
+    slot = slot_on_day_at(session, target_day, "17:30")
     report = [
         "MULTIBOOK DIAGNOSTIC",
         (
-            f"Target slot: {slot.day.isoformat() if slot.day else 'tomorrow'} "
+            "Target slot from GetActivitySchedule: "
+            f"{slot.day.isoformat() if slot.day else target_day.isoformat()} "
             f"{slot.start_hhmm}, appointmentID={slot.id}, status={slot.status}"
+        ),
+        (
+            "Cleanup policy: preserve all booking ids present in the baseline "
+            "GetCustomerAppointments response."
         ),
     ]
 

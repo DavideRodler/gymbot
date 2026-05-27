@@ -290,8 +290,8 @@ async def cmd_multibook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not _authorized(update):
         return
     await update.message.reply_text(
-        "🧪 Avvio /multibook: prenoto uno slot reale di domani e provo a cancellare "
-        "ogni prenotazione creata dopo ciascun test."
+        "🧪 Avvio /multibook sullo slot già prenotato del 2026-05-28 alle 17:30. "
+        "Cancello solo eventuali booking non presenti nella baseline iniziale."
     )
     try:
         report = await asyncio.to_thread(
