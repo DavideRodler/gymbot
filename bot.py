@@ -292,9 +292,12 @@ async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text("🔎 Recupero amici invitabili…")
     try:
         session = booker.make_session(config.cookie_string())
-        raw = await asyncio.to_thread(booker.fetch_friends_raw, session)
+        slot = await asyncio.to_thread(booker.first_available_slot_today_or_tomorrow, session)
+        raw = await asyncio.to_thread(booker.fetch_friends_raw, session, slot.id)
         for chunk in _chunks(raw):
             await update.message.reply_text(chunk)
+    except booker.SlotNotFound as e:
+        await update.message.reply_text(f"⚠️ {e}")
     except booker.SessionExpired as e:
         await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
     except booker.BookingError as e:

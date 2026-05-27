@@ -204,12 +204,14 @@ def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> 
     return parse_slots(payload)
 
 
-def fetch_friends_raw(session: requests.Session, timeout: float = 10.0) -> str:
+def fetch_friends_raw(
+    session: requests.Session, appointment_id: str, timeout: float = 10.0
+) -> str:
     """GET the invite-friends endpoint and return the raw response body."""
     try:
         r = session.get(
             BASE_URL + FRIENDS_PATH,
-            params={"appointmentId": "0"},
+            params={"appointmentId": appointment_id},
             timeout=timeout,
             allow_redirects=True,
         )
@@ -227,6 +229,17 @@ def fetch_friends_raw(session: requests.Session, timeout: float = 10.0) -> str:
     if not body:
         raise BookingError("Risposta vuota da GetFriendsToInvite.")
     return body
+
+
+def first_available_slot_today_or_tomorrow(session: requests.Session) -> Slot:
+    """Return the first available schedule slot from today or tomorrow."""
+    today = now_local().date()
+    for day in (today, today + timedelta(days=1)):
+        slots = fetch_slots(session, day)
+        for slot in slots:
+            if slot.is_available:
+                return slot
+    raise SlotNotFound("Nessuno slot disponibile trovato oggi o domani.")
 
 
 _HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
