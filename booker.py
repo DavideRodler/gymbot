@@ -205,13 +205,19 @@ def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> 
 
 
 def fetch_friends_raw(
-    session: requests.Session, appointment_id: str, timeout: float = 10.0
+    session: requests.Session,
+    appointment_id: str,
+    extra_params: Optional[dict[str, str]] = None,
+    timeout: float = 10.0,
 ) -> str:
     """GET the invite-friends endpoint and return the raw response body."""
+    params = {"appointmentId": appointment_id}
+    if extra_params:
+        params.update(extra_params)
     try:
         r = session.get(
             BASE_URL + FRIENDS_PATH,
-            params={"appointmentId": appointment_id},
+            params=params,
             timeout=timeout,
             allow_redirects=True,
         )
