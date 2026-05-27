@@ -102,7 +102,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/slot [orario] — mostra o cambia lo slot\n"
         "/status — sessione, prossima e ultima prenotazione\n"
         "/test — prova senza prenotare\n"
-        "/friends — mostra JSON raw amici invitabili\n"
+        "/multibook — diagnostica multi-prenotazione con cleanup\n"
         "/book — prenota subito lo slot di oggi+2\n"
         "/stop — metti in pausa le prenotazioni\n"
         "/resume — riattiva le prenotazioni\n"
@@ -286,13 +286,18 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"❌ Errore: {e}")
 
 
-async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_multibook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
-    await update.message.reply_text("🔎 Recupero amici invitabili per lo slot di oggi alle 13:00…")
+    await update.message.reply_text(
+        "🧪 Avvio /multibook: prenoto uno slot reale di domani e provo a cancellare "
+        "ogni prenotazione creata dopo ciascun test."
+    )
     try:
-        session = booker.make_session(config.cookie_string())
-        slot = await asyncio.to_thread(booker.slot_today_at, session, "13:00")
+        report = await asyncio.to_thread(
+            booker.run_multibook_diagnostics,
+            config.cookie_string(),
+        )
     except booker.SlotNotFound as e:
         await update.message.reply_text(f"⚠️ {e}")
         return
@@ -300,40 +305,11 @@ async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
         return
     except booker.BookingError as e:
-        await update.message.reply_text(f"❌ Errore /friends: {e}")
+        await update.message.reply_text(f"❌ Errore /multibook: {e}")
         return
 
-    variants = [
-        ("base", {}),
-        ("query=a", {"query": "a"}),
-        ("name=a", {"name": "a"}),
-        ("search=a", {"search": "a"}),
-        ("term=a", {"term": "a"}),
-    ]
-    for label, params in variants:
-        try:
-            raw = await asyncio.to_thread(booker.fetch_friends_raw, session, slot.id, params)
-            message = (
-                f"GetFriendsToInvite?appointmentId={slot.id}"
-                f"{'&' + label if params else ''}\n"
-                f"Slot: {slot.start_hhmm}, status: {slot.status}\n"
-                f"{raw}"
-            )
-        except booker.SessionExpired as e:
-            message = (
-                f"GetFriendsToInvite?appointmentId={slot.id}"
-                f"{'&' + label if params else ''}\n"
-                f"⚠️ Sessione scaduta/non autorizzata: {e}"
-            )
-        except booker.BookingError as e:
-            message = (
-                f"GetFriendsToInvite?appointmentId={slot.id}"
-                f"{'&' + label if params else ''}\n"
-                f"❌ Errore GetFriendsToInvite: {e}"
-            )
-
-        for chunk in _chunks(message):
-            await update.message.reply_text(chunk)
+    for chunk in _chunks(report):
+        await update.message.reply_text(chunk)
 
 
 def register_handlers(app: Application) -> None:
@@ -344,7 +320,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("slot", cmd_slot))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("test", cmd_test))
-    app.add_handler(CommandHandler("friends", cmd_friends))
+    app.add_handler(CommandHandler("multibook", cmd_multibook))
     app.add_handler(CommandHandler("book", cmd_book))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("resume", cmd_resume))

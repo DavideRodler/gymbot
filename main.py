@@ -40,7 +40,7 @@ def build_application() -> Application:
             BotCommand("slot", "Cambia orario slot"),
             BotCommand("cookies", "Aggiorna sessione (incolla cURL)"),
             BotCommand("test", "Testa senza prenotare"),
-            BotCommand("friends", "Mostra JSON raw amici invitabili"),
+            BotCommand("multibook", "Diagnostica multi-prenotazione"),
             BotCommand("book", "Prenota subito (oggi+2)"),
             BotCommand("stop", "Metti in pausa le prenotazioni"),
             BotCommand("resume", "Riattiva le prenotazioni"),

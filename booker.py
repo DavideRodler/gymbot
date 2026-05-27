@@ -12,6 +12,7 @@ when Status == "Available". No anti-forgery token is required on these AJAX POST
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -41,7 +42,9 @@ except ImportError:
 # --- Endpoints (confirmed from HAR) ---------------------------------------
 SCHEDULE_PATH = f"{BOOKING_PATH}/GetActivitySchedule"
 BOOK_PATH = f"{BOOKING_PATH}/BookAppointment"
-FRIENDS_PATH = f"{BOOKING_PATH}/GetFriendsToInvite"
+CUSTOMER_APPOINTMENTS_PATH = f"{BOOKING_PATH}/GetCustomerAppointments"
+DELETE_BOOKING_PATH = f"{BOOKING_PATH}/DeleteBooking"
+MOVE_TO_ATTENDANTS_PATH = f"{BOOKING_PATH}/MoveToAttendants"
 CONFIRM_PATH = f"{BOOKING_PATH}/ConfirmActivityBooking"
 BOOKACTIVITY_PATH = f"{BOOKING_PATH}/BookActivity"
 
@@ -64,6 +67,32 @@ DEFAULT_HEADERS = {
     "Referer": BASE_URL + BOOKACTIVITY_PATH
     + f"?activityId={ACTIVITY_ID}&activityFlags={ACTIVITY_FLAGS}",
 }
+
+
+@dataclass
+class RawResult:
+    method: str
+    path: str
+    status_code: int
+    final_url: str
+    body: str
+    params: dict[str, str] = field(default_factory=dict)
+    data: dict[str, str] = field(default_factory=dict)
+
+    def format(self, label: str) -> str:
+        lines = [
+            label,
+            f"{self.method} {self.path}",
+            f"HTTP {self.status_code}",
+            f"Final URL: {self.final_url}",
+        ]
+        if self.params:
+            lines.append(f"params={self.params}")
+        if self.data:
+            lines.append(f"data={self.data}")
+        lines.append("Response:")
+        lines.append(self.body.strip() or "<empty>")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -204,58 +233,76 @@ def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> 
     return parse_slots(payload)
 
 
-def fetch_friends_raw(
+def _raw_request(
     session: requests.Session,
-    appointment_id: str,
-    extra_params: Optional[dict[str, str]] = None,
-    timeout: float = 10.0,
-) -> str:
-    """GET the invite-friends endpoint and return the raw response body."""
-    params = {"appointmentId": appointment_id}
-    if extra_params:
-        params.update(extra_params)
+    method: str,
+    path: str,
+    *,
+    params: Optional[dict[str, str]] = None,
+    data: Optional[dict[str, str]] = None,
+    timeout: float = 15.0,
+) -> RawResult:
+    """Return raw HTTP result for diagnostics; do not interpret non-2xx bodies."""
     try:
-        r = session.get(
-            BASE_URL + FRIENDS_PATH,
+        r = session.request(
+            method,
+            BASE_URL + path,
             params=params,
+            data=data,
             timeout=timeout,
             allow_redirects=True,
         )
     except requests.RequestException as e:
-        raise BookingError(f"Errore di rete nel recupero amici: {e}") from e
-
-    if _looks_like_login(r):
-        raise SessionExpired("Redirect alla pagina di login.")
-    if r.status_code in (401, 403):
-        raise SessionExpired(f"HTTP {r.status_code}: sessione non autorizzata.")
-    if r.status_code != 200:
-        raise BookingError(f"HTTP {r.status_code} nel recupero amici.")
-
-    body = r.text.strip()
-    if not body:
-        raise BookingError("Risposta vuota da GetFriendsToInvite.")
-    return body
+        raise BookingError(f"Errore di rete {method} {path}: {e}") from e
+    return RawResult(
+        method=method,
+        path=path,
+        status_code=r.status_code,
+        final_url=r.url,
+        body=r.text,
+        params=params or {},
+        data=data or {},
+    )
 
 
-def first_available_slot_today_or_tomorrow(session: requests.Session) -> Slot:
-    """Return the first available schedule slot from today or tomorrow."""
-    today = now_local().date()
-    for day in (today, today + timedelta(days=1)):
-        slots = fetch_slots(session, day)
-        for slot in slots:
-            if slot.is_available:
-                return slot
-    raise SlotNotFound("Nessuno slot disponibile trovato oggi o domani.")
-
-
-def slot_today_at(session: requests.Session, slot_time: str) -> Slot:
-    """Return today's slot at `slot_time`, regardless of availability status."""
-    today = now_local().date()
-    slots = fetch_slots(session, today)
+def next_available_slot_tomorrow(session: requests.Session) -> Slot:
+    """Return the first Available slot from tomorrow's schedule."""
+    tomorrow = now_local().date() + timedelta(days=1)
+    slots = fetch_slots(session, tomorrow)
     for slot in slots:
-        if slot.start_hhmm == slot_time and (slot.day is None or slot.day == today):
+        if slot.is_available:
+            if slot.day is None:
+                slot.day = tomorrow
             return slot
-    raise SlotNotFound(f"Nessuno slot delle {slot_time} trovato per oggi.")
+    raise SlotNotFound(f"Nessuno slot disponibile trovato per domani ({tomorrow}).")
+
+
+def book_appointment_raw(
+    session: requests.Session,
+    appointment_id: str,
+    extra_data: Optional[dict[str, str]] = None,
+) -> RawResult:
+    data = {"appointmentID": appointment_id}
+    if extra_data:
+        data.update(extra_data)
+    return _raw_request(session, "POST", BOOK_PATH, data=data)
+
+
+def get_customer_appointments_raw(session: requests.Session) -> RawResult:
+    return _raw_request(session, "GET", CUSTOMER_APPOINTMENTS_PATH)
+
+
+def delete_booking_raw(session: requests.Session, booking_id: str) -> RawResult:
+    return _raw_request(session, "POST", DELETE_BOOKING_PATH, data={"id": booking_id})
+
+
+def move_to_attendants_raw(session: requests.Session, appointment_id: str) -> RawResult:
+    return _raw_request(
+        session,
+        "POST",
+        MOVE_TO_ATTENDANTS_PATH,
+        data={"appointmentID": appointment_id},
+    )
 
 
 _HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
@@ -387,3 +434,166 @@ def book_with_retries(
             if i < attempts - 1:
                 time.sleep(gap)
     raise last or BookingError("Prenotazione fallita.")
+
+
+def parse_customer_appointments(raw: str) -> list[dict]:
+    try:
+        payload = json.loads(raw)
+    except ValueError as e:
+        raise BookingError("GetCustomerAppointments non ha restituito JSON.") from e
+    data = payload.get("data", []) if isinstance(payload, dict) else []
+    if not isinstance(data, list):
+        raise BookingError("GetCustomerAppointments JSON senza lista data.")
+    return [item for item in data if isinstance(item, dict)]
+
+
+def _appointment_ids(appointments: list[dict]) -> set[str]:
+    return {
+        str(item["id"])
+        for item in appointments
+        if item.get("id") is not None
+    }
+
+
+def _appointment_matches_slot(appointment: dict, slot: Slot) -> bool:
+    if str(appointment.get("id", "")) == slot.id:
+        return True
+    if slot.day is None:
+        return False
+    date_start = str(appointment.get("DateStart", ""))
+    time_start = str(appointment.get("TimeStart", ""))[:5]
+    return date_start == slot.day.strftime("%d/%m/%Y") and time_start == slot.start_hhmm
+
+
+def _snapshot_ids(
+    session: requests.Session,
+    report: list[str],
+    label: str,
+) -> Optional[set[str]]:
+    try:
+        raw = get_customer_appointments_raw(session)
+    except BookingError as e:
+        report.append(f"{label}: GetCustomerAppointments failed: {e}")
+        return None
+    report.append(raw.format(label))
+    try:
+        return _appointment_ids(parse_customer_appointments(raw.body))
+    except BookingError as e:
+        report.append(f"{label} parse error: {e}")
+        return None
+
+
+def _cleanup_created_bookings(
+    session: requests.Session,
+    report: list[str],
+    label: str,
+    slot: Slot,
+    before_ids: Optional[set[str]],
+) -> None:
+    try:
+        raw = get_customer_appointments_raw(session)
+    except BookingError as e:
+        report.append(f"{label}: GetCustomerAppointments before cleanup failed: {e}")
+        if before_ids is None or slot.id not in before_ids:
+            try:
+                deleted = delete_booking_raw(session, slot.id)
+                report.append(deleted.format(f"{label}: fallback DeleteBooking id={slot.id}"))
+            except BookingError as delete_error:
+                report.append(
+                    f"{label}: fallback DeleteBooking id={slot.id} failed: {delete_error}"
+                )
+        return
+    report.append(raw.format(f"{label}: GetCustomerAppointments before cleanup"))
+    try:
+        appointments = parse_customer_appointments(raw.body)
+        created = []
+        for appointment in appointments:
+            booking_id = appointment.get("id")
+            if booking_id is None:
+                continue
+            booking_id = str(booking_id)
+            if before_ids is not None and booking_id in before_ids:
+                continue
+            if _appointment_matches_slot(appointment, slot):
+                created.append(booking_id)
+    except BookingError as e:
+        report.append(f"{label}: cleanup parse error: {e}")
+        created = [slot.id] if before_ids is None or slot.id not in before_ids else []
+
+    if not created:
+        report.append(f"{label}: cleanup found no created bookings.")
+        return
+
+    for booking_id in dict.fromkeys(created):
+        try:
+            deleted = delete_booking_raw(session, booking_id)
+            report.append(deleted.format(f"{label}: DeleteBooking id={booking_id}"))
+        except BookingError as e:
+            report.append(f"{label}: DeleteBooking id={booking_id} failed: {e}")
+
+
+def _count_slot_bookings(session: requests.Session, report: list[str], slot: Slot) -> int:
+    raw = get_customer_appointments_raw(session)
+    report.append(raw.format("TEST 1: GetCustomerAppointments count check"))
+    appointments = parse_customer_appointments(raw.body)
+    return sum(1 for item in appointments if _appointment_matches_slot(item, slot))
+
+
+def run_multibook_diagnostics(cookie_string: str) -> str:
+    """Run raw multi-booking probes and cleanup created bookings after each test."""
+    session = make_session(cookie_string)
+    slot = next_available_slot_tomorrow(session)
+    report = [
+        "MULTIBOOK DIAGNOSTIC",
+        (
+            f"Target slot: {slot.day.isoformat() if slot.day else 'tomorrow'} "
+            f"{slot.start_hhmm}, appointmentID={slot.id}, status={slot.status}"
+        ),
+    ]
+
+    report.append("TEST 1: same appointmentID twice")
+    before_ids = _snapshot_ids(session, report, "TEST 1: baseline GetCustomerAppointments")
+    try:
+        first = book_appointment_raw(session, slot.id)
+        report.append(first.format("TEST 1A: BookAppointment first POST"))
+    except BookingError as e:
+        report.append(f"TEST 1A: BookAppointment first POST failed: {e}")
+    time.sleep(0.5)
+    try:
+        second = book_appointment_raw(session, slot.id)
+        report.append(second.format("TEST 1B: BookAppointment second POST same id"))
+    except BookingError as e:
+        report.append(f"TEST 1B: BookAppointment second POST failed: {e}")
+    try:
+        count = _count_slot_bookings(session, report, slot)
+        report.append(f"TEST 1 result: bookings found for target slot = {count}")
+    except BookingError as e:
+        report.append(f"TEST 1 count check failed: {e}")
+    _cleanup_created_bookings(session, report, "TEST 1 cleanup", slot, before_ids)
+
+    report.append("TEST 2: BookAppointment with extra quantity/seats params")
+    variants = [
+        ("quantity=2", {"quantity": "2"}),
+        ("seats=2", {"seats": "2"}),
+        ("numberOfPeople=2", {"numberOfPeople": "2"}),
+        ("count=2", {"count": "2"}),
+    ]
+    for label, extra in variants:
+        before_ids = _snapshot_ids(session, report, f"TEST 2 {label}: baseline")
+        try:
+            result = book_appointment_raw(session, slot.id, extra)
+            report.append(result.format(f"TEST 2: BookAppointment {label}"))
+        except BookingError as e:
+            report.append(f"TEST 2: BookAppointment {label} failed: {e}")
+        _cleanup_created_bookings(session, report, f"TEST 2 {label} cleanup", slot, before_ids)
+
+    report.append("TEST 3: MoveToAttendants")
+    before_ids = _snapshot_ids(session, report, "TEST 3: baseline")
+    try:
+        result = move_to_attendants_raw(session, slot.id)
+        report.append(result.format("TEST 3: MoveToAttendants appointmentID"))
+    except BookingError as e:
+        report.append(f"TEST 3: MoveToAttendants failed: {e}")
+    _cleanup_created_bookings(session, report, "TEST 3 cleanup", slot, before_ids)
+
+    return "\n\n".join(report)
