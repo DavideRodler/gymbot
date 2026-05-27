@@ -41,6 +41,7 @@ except ImportError:
 # --- Endpoints (confirmed from HAR) ---------------------------------------
 SCHEDULE_PATH = f"{BOOKING_PATH}/GetActivitySchedule"
 BOOK_PATH = f"{BOOKING_PATH}/BookAppointment"
+FRIENDS_PATH = f"{BOOKING_PATH}/GetFriendsToInvite"
 CONFIRM_PATH = f"{BOOKING_PATH}/ConfirmActivityBooking"
 BOOKACTIVITY_PATH = f"{BOOKING_PATH}/BookActivity"
 
@@ -201,6 +202,31 @@ def fetch_slots(session: requests.Session, day: date, timeout: float = 10.0) -> 
         raise BookingError(payload.get("error_message") or "GetActivitySchedule ERROR.")
 
     return parse_slots(payload)
+
+
+def fetch_friends_raw(session: requests.Session, timeout: float = 10.0) -> str:
+    """GET the invite-friends endpoint and return the raw response body."""
+    try:
+        r = session.get(
+            BASE_URL + FRIENDS_PATH,
+            params={"appointmentId": "0"},
+            timeout=timeout,
+            allow_redirects=True,
+        )
+    except requests.RequestException as e:
+        raise BookingError(f"Errore di rete nel recupero amici: {e}") from e
+
+    if _looks_like_login(r):
+        raise SessionExpired("Redirect alla pagina di login.")
+    if r.status_code in (401, 403):
+        raise SessionExpired(f"HTTP {r.status_code}: sessione non autorizzata.")
+    if r.status_code != 200:
+        raise BookingError(f"HTTP {r.status_code} nel recupero amici.")
+
+    body = r.text.strip()
+    if not body:
+        raise BookingError("Risposta vuota da GetFriendsToInvite.")
+    return body
 
 
 _HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")

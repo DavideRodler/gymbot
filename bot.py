@@ -68,6 +68,10 @@ def _scheduler(context: ContextTypes.DEFAULT_TYPE) -> BookingScheduler:
     return context.application.bot_data["scheduler"]
 
 
+def _chunks(text: str, size: int = 3900) -> list[str]:
+    return [text[i:i + size] for i in range(0, len(text), size)] or [text]
+
+
 async def _session_line() -> str:
     ok = await asyncio.to_thread(booker.validate_session, config.cookie_string())
     return "✅ valida" if ok else "⚠️ scaduta/assente"
@@ -98,6 +102,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/slot [orario] — mostra o cambia lo slot\n"
         "/status — sessione, prossima e ultima prenotazione\n"
         "/test — prova senza prenotare\n"
+        "/friends — mostra JSON raw amici invitabili\n"
         "/book — prenota subito lo slot di oggi+2\n"
         "/stop — metti in pausa le prenotazioni\n"
         "/resume — riattiva le prenotazioni\n"
@@ -281,6 +286,21 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"❌ Errore: {e}")
 
 
+async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _authorized(update):
+        return
+    await update.message.reply_text("🔎 Recupero amici invitabili…")
+    try:
+        session = booker.make_session(config.cookie_string())
+        raw = await asyncio.to_thread(booker.fetch_friends_raw, session)
+        for chunk in _chunks(raw):
+            await update.message.reply_text(chunk)
+    except booker.SessionExpired as e:
+        await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
+    except booker.BookingError as e:
+        await update.message.reply_text(f"❌ Errore GetFriendsToInvite: {e}")
+
+
 def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -289,6 +309,7 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("slot", cmd_slot))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("test", cmd_test))
+    app.add_handler(CommandHandler("friends", cmd_friends))
     app.add_handler(CommandHandler("book", cmd_book))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("resume", cmd_resume))
