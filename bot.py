@@ -293,20 +293,47 @@ async def cmd_friends(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         session = booker.make_session(config.cookie_string())
         slot = await asyncio.to_thread(booker.slot_today_at, session, "13:00")
-        raw = await asyncio.to_thread(booker.fetch_friends_raw, session, slot.id)
-        message = (
-            f"GetFriendsToInvite?appointmentId={slot.id}\n"
-            f"Slot: {slot.start_hhmm}, status: {slot.status}\n"
-            f"{raw}"
-        )
-        for chunk in _chunks(message):
-            await update.message.reply_text(chunk)
     except booker.SlotNotFound as e:
         await update.message.reply_text(f"⚠️ {e}")
+        return
     except booker.SessionExpired as e:
         await update.message.reply_text(f"⚠️ Sessione scaduta/non autorizzata: {e}")
+        return
     except booker.BookingError as e:
         await update.message.reply_text(f"❌ Errore /friends: {e}")
+        return
+
+    variants = [
+        ("base", {}),
+        ("query=a", {"query": "a"}),
+        ("name=a", {"name": "a"}),
+        ("search=a", {"search": "a"}),
+        ("term=a", {"term": "a"}),
+    ]
+    for label, params in variants:
+        try:
+            raw = await asyncio.to_thread(booker.fetch_friends_raw, session, slot.id, params)
+            message = (
+                f"GetFriendsToInvite?appointmentId={slot.id}"
+                f"{'&' + label if params else ''}\n"
+                f"Slot: {slot.start_hhmm}, status: {slot.status}\n"
+                f"{raw}"
+            )
+        except booker.SessionExpired as e:
+            message = (
+                f"GetFriendsToInvite?appointmentId={slot.id}"
+                f"{'&' + label if params else ''}\n"
+                f"⚠️ Sessione scaduta/non autorizzata: {e}"
+            )
+        except booker.BookingError as e:
+            message = (
+                f"GetFriendsToInvite?appointmentId={slot.id}"
+                f"{'&' + label if params else ''}\n"
+                f"❌ Errore GetFriendsToInvite: {e}"
+            )
+
+        for chunk in _chunks(message):
+            await update.message.reply_text(chunk)
 
 
 def register_handlers(app: Application) -> None:
